@@ -13,6 +13,12 @@ public class RoutingTable {
     private HashMap<Integer, RoutingTableEntry> table = new HashMap<>();
 
     /**
+     * The main routing daemon object which this table belongs to.
+     * Needed to allow updates to be triggered when a route is set to infinity.
+     */
+    private RIPDaemon daemon;
+
+    /**
      * The time after which routing table entries timeout. Set with a fixed
      * ratio relative to the periodic update period.
      */
@@ -30,8 +36,9 @@ public class RoutingTable {
      * the routing table with this information.
      * @param neighbours  A list containing information about each neighbour.
      */
-    public RoutingTable(ArrayList<int[]> neighbours, int timeoutPeriod,
-                        int garbageCollectionPeriod) {
+    public RoutingTable(RIPDaemon daemon, ArrayList<int[]> neighbours,
+                        int timeoutPeriod, int garbageCollectionPeriod) {
+        this.daemon = daemon;
         this.timeoutPeriod = timeoutPeriod;
         this.garbageCollectionPeriod = garbageCollectionPeriod;
 
@@ -110,7 +117,7 @@ public class RoutingTable {
         entry.setGarbageCollectionTime(
                 LocalTime.now().plusSeconds(garbageCollectionPeriod));
         entry.setMetric(RIPDaemon.INFINITY);
-        // TODO: trigger a response to be sent.
+        this.daemon.triggerUpdate();
     }
 
     @Override
