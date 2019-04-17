@@ -1,5 +1,6 @@
 import java.net.DatagramSocket;
 import java.net.SocketException;
+import java.time.LocalTime;
 import java.util.ArrayList;
 
 public class RIPDaemon {
@@ -7,6 +8,18 @@ public class RIPDaemon {
      * The metric value used to represent infinity.
      */
     public static final int INFINITY = 16;
+
+    /**
+     * The ratio of the timeout timer period to the periodic update
+     * timer period.
+     */
+    private static final int TIMEOUT_PERIOD_RATIO = 6;
+
+    /**
+     * The ratio of the garbage-collection timer period to the periodic update
+     * timer period.
+     */
+    private static final int GARBAGE_COLLECTION_PERIOD_RATIO = 4;
 
     /**
      * The router ID of this router.
@@ -30,13 +43,37 @@ public class RIPDaemon {
      */
     private Output output;
 
+    /**
+     * The time to wait between sending periodic updates (in seconds).
+     * Can be specified in the config file, otherwise a default value is used.
+     */
+    private int updatePeriod = 10;
+
+    /**
+     * The next time that update messages should be sent to neighbours.
+     * Set to the current time plus a random value in the range
+     * [updatePeriod * 0.8, updatePeriod * 1.2] every time that an update is
+     * sent.
+     */
+    private LocalTime nextUpdateTime;
+
 
     private RIPDaemon(int routerId, ArrayList<Integer> inputPorts,
-                     ArrayList<int[]> outputs) {
+                     ArrayList<int[]> outputs, int updatePeriod) {
         this.id = routerId;
 
+        // Set the update timer period to the value in the config file if it
+        // was specified.
+        if (updatePeriod != 0) {
+            this.updatePeriod = updatePeriod;
+        }
+
         // Initialise the routing table and display the initial contents.
-        this.table = new RoutingTable(outputs);
+        int timeoutPeriod = this.updatePeriod * TIMEOUT_PERIOD_RATIO;
+        int garbageCollectionPeriod = this.updatePeriod * GARBAGE_COLLECTION_PERIOD_RATIO;
+
+        this.table = new RoutingTable(outputs, timeoutPeriod,
+                garbageCollectionPeriod);
         System.out.println("Initial routing table:\n");
         System.out.println(this.table);
 
@@ -53,13 +90,38 @@ public class RIPDaemon {
         // Arbitrarily choose a socket to use for sending output messages.
         DatagramSocket outputSocket = inputSockets.get(0);
         this.output = new Output(routerId, outputSocket, outputs, this.table);
+
+        // Send initial response messages.
+        this.output.sendUpdates();
+        setNextUpdateTime();
+    }
+
+    /**
+     * Sets the nextUpdateTime to the current time plus the update period,
+     * offset by a random small amount.
+     */
+    private void setNextUpdateTime() {
+        double randomMultiplier = Math.random() * 0.4 + 0.8;
+        double randomPeriodSeconds = this.updatePeriod * randomMultiplier;
+        long randomPeriodNanos = (long) (randomPeriodSeconds * 1000000000);
+        this.nextUpdateTime = LocalTime.now().plusNanos(randomPeriodNanos);
     }
 
     /**
      * Enter an infinite loop to wait for events and handle them as needed.
      */
     private void run() {
-        // TODO: implement
+        // TODO: Use select to block while waiting for events
+        while (true) {
+            // Check whether it's time for a periodic update.
+            if (LocalTime.now().isAfter(this.nextUpdateTime)) {
+                this.output.sendUpdates();
+                setNextUpdateTime();
+            }
+
+            // Check the timers in the routing table.
+            this.table.checkTimers();
+        }
     }
 
     public static void main(String[] args) {
@@ -71,7 +133,9 @@ public class RIPDaemon {
         parser.parseFile();
 
         RIPDaemon daemon = new RIPDaemon(parser.getRouterId(),
-                parser.getInputPorts(), parser.getOutputs());
+                                         parser.getInputPorts(),
+                                         parser.getOutputs(),
+                                         parser.getUpdatePeriod());
 
         daemon.run();
     }

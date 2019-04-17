@@ -30,6 +30,7 @@ public class ConfigFileParser {
     private int routerId;
     private ArrayList<Integer> inputPorts = new ArrayList<>();
     private ArrayList<int[]> outputs = new ArrayList<>();
+    private int updatePeriod;
 
     /**
      * Flags to keep track of whether each parameter has been read yet,
@@ -38,6 +39,7 @@ public class ConfigFileParser {
     private boolean routerIdSet = false;
     private boolean inputPortsSet = false;
     private boolean outputsSet = false;
+    private boolean updatePeriodSet = false;
 
 
     /**
@@ -74,6 +76,20 @@ public class ConfigFileParser {
     }
 
     /**
+     * Get the update period. If it was not specified in the config file,
+     * returns 0.
+     * Should be called after parsing the file.
+     * @return  List of outputs.
+     */
+    public int getUpdatePeriod() {
+        if (updatePeriodSet) {
+            return updatePeriod;
+        } else {
+            return 0;
+        }
+    }
+
+    /**
      * Tries to parse the given config file. If the file doesn't exist or has
      * an invalid format, prints an error message and terminates the program.
      */
@@ -89,7 +105,8 @@ public class ConfigFileParser {
             Error.error("Given configuration file doesn't exist.");
         }
 
-        // Check that the config file specified all the mandatory parameters.
+        // Check that the config file specified all the mandatory parameters
+        // (the update-period parameter is optional).
         if (!routerIdSet) {
             Error.error("Invalid config file: missing router-id.");
         }
@@ -151,7 +168,14 @@ public class ConfigFileParser {
             if (this.outputsSet) {
                 Error.error("Invalid config file: outputs defined more than once.");
             } else {
-                parseOutputs(Arrays.copyOfRange(tokens,1, tokens.length));
+                parseOutputs(Arrays.copyOfRange(tokens, 1, tokens.length));
+            }
+
+        } else if (parameter.equals("update-period")) {
+            if (this.updatePeriodSet) {
+                Error.error("Invalid config file: update-period defined more than once.");
+            } else {
+                parseUpdatePeriod(Arrays.copyOfRange(tokens, 1, tokens.length));
             }
 
         } else {
@@ -271,6 +295,32 @@ public class ConfigFileParser {
         this.outputsSet = true;
     }
 
+    /**
+     * Takes the list of the tokens following "update-period" in a line of the
+     * config file and extracts the update period.
+     * Prints an error message if the contents of the line are not valid.
+     * @param tokens  The tokens from the line in the config file.
+     */
+    private void parseUpdatePeriod(String[] tokens) {
+        if (tokens.length != 1) {
+            updatePeriodError();
+        }
+
+        try {
+            int period = Integer.parseInt(tokens[0]);
+            if (period > 0) {
+                this.updatePeriod = period;
+            } else {
+                updatePeriodError();
+            }
+
+        } catch (NumberFormatException e) {
+            updatePeriodError();
+        }
+
+        this.updatePeriodSet = true;
+    }
+
     private boolean isValidRouterID(int id) {
         return id >= MIN_ROUTER_ID && id <= MAX_ROUTER_ID;
     }
@@ -312,5 +362,14 @@ public class ConfigFileParser {
         Error.error("Invalid config file: outputs must be a non-empty " +
                 "space-separated list of entries in the form " +
                 "inputPort-metric-routerId, where each value is an integer.");
+    }
+
+    /**
+     * Prints an error message explaining the usage of the update-period parameter
+     * and terminates the program.
+     */
+    private void updatePeriodError() {
+        Error.error("Invalid config file: update-period must be a " +
+                "single positive integer.");
     }
 }

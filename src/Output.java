@@ -104,6 +104,7 @@ public class Output {
         for (int id : neighbours.keySet()) {
             int portNo = neighbours.get(id);
             sendUpdate(id, portNo);
+            System.out.println(String.format("Update sent to router %d", id));
         }
     }
 
