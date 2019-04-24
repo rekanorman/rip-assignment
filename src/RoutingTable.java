@@ -62,14 +62,14 @@ public class RoutingTable {
         this.table.put(destId, entry);
     }
 
-    public int[] getNeighbours(ArrayList<int[]> outputs) {
+    public HashMap<Integer, Integer> getNeighbours(ArrayList<int[]> outputs) {
 
         HashMap<Integer, Integer> neighbours = new HashMap<>();
 
         for (int[] neighbour : outputs) {
             int id = neighbour[2];
             int portNo = neighbour[0];
-            this.neighbours.put(id, portNo);
+            neighbours.put(id, portNo);
         }
 
         return neighbours;

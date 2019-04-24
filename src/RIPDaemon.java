@@ -166,13 +166,14 @@ public class RIPDaemon {
 
     /**
      * Instantiates multiple server sockets to listen and uses a Selector to take in a set of channels and blocks until at least
-     * one has a pending connection. Returns the socket that has been selected
+     * one has a pending connection. Returns the socket that has been selected (?)
      * @param inputPorts
      */
     // TODO: Change to datagram sockets if necessary
     private Socket selectInputPort(ArrayList<Integer> inputPorts) {
 
         Selector selector;
+        Socket socket;
 
         try {
             selector = Selector.open();
@@ -197,7 +198,7 @@ public class RIPDaemon {
                         SelectionKey key = (SelectionKey) iterator.next();
                         if (key.isAcceptable()) {
                             SocketChannel receiveSocket = server.accept();
-                            Socket socket = receiveSocket.socket();
+                            socket = receiveSocket.socket();
                             return socket;
                             break;
                         }
@@ -208,9 +209,12 @@ public class RIPDaemon {
             Error.error("Error: Could not instantiate input port selector");
 
         } finally {
-            selector.close();
-            server.close();
+            // Close sockets and servers
+            //selector = Selector.close();
+            //socket.close();
         }
+        return socket;
+
     }
 
     /**

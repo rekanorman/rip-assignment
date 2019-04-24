@@ -3,8 +3,11 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.lang.Integer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Arrays;
+
 
 public class Input {
 
@@ -34,7 +37,7 @@ public class Input {
      * The IP address to receive messages from, initialised to the
      * localhost address in the constructor.
      */
-    private InetAddress destAddress;
+    private InetAddress address;
 
     /**
      * The socket used for listening for incoming packets
@@ -71,11 +74,6 @@ public class Input {
         this.receiveSocket = receiveSocket;
         this.table = table;
 
-        try {
-            this.destAddress = InetAddress.getLocalHost();
-        } catch (UnknownHostException e) {
-            Error.error("Could not resolve localhost address.");
-        }
 
         waitForMessage();
 
@@ -108,13 +106,19 @@ public class Input {
     public void checkValidity(DatagramPacket receivedPacket) {
 
         // TODO: Add logic for ignoring the packet. Not sure how to ignore/discard packet or log it yet
-        bool packetValid = false;
-        bool entryValid = false;
+        boolean packetValid = false;
+        boolean entryValid = false;
+
+        try {
+            address = InetAddress.getLocalHost();
+        } catch (UnknownHostException e) {
+            Error.error("Could not resolve localhost address.");
+        }
 
         // Check that the sender is a neighbour (directly connected) to current router
         // Check that the received packet is not sent from the router itself
         int receivedPacketPort = receivedPacket.getPort();
-        if (neighbours.containsValue(receivedPacketPort) && !receivedPacket.getAddress().equals(InetAddress.getLocalHost())) {
+        if (neighbours.containsValue(receivedPacketPort) && !receivedPacket.getAddress().equals(address)) {
             packetValid = true;
         }
 
@@ -125,12 +129,13 @@ public class Input {
             for (byte b : message) {
 
                 // Check that the destination address is valid (unicast)
-                byte[] destinationAddress = copyOfRange( byte[] message, 0, i);
+                byte[] destinationAddress = Arrays.copyOfRange(message, 0, i);
                 /*I don't think this location is right but not sure where to locate
                 metric number at this point (going off of Output.createMessage())*/
-                int metricNo = Util.byteArrayToInt(byte[] metric);
-                byte[] metric = copyOfRange( byte[] message, 0, i + 4)
-                if (Util.byteArrayToInt( byte[] destinationAddress).equals(InetAddress.getLocalHost())){
+                byte[] metric = Arrays.copyOfRange(message, 0, i + 4);
+                int metricNo = Util.byteArrayToInt(metric);
+
+                if (Util.byteArrayToInt(destinationAddress).equals(Util.bteArrayToInt(address))){
                     // Check that the metric is between 1 and 16
                     if (metricNo >=1 && metricNo <=16){
                         entryValid = true;
