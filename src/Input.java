@@ -63,7 +63,7 @@ public class Input {
      * @param outputSocket  A datagram socket used to listen for the response packets.
      * @param outputs       A list of the router's neighbours, in the form
      *                          [inputPort, metric, routerId].
-     * @param table         The routing table of router sending the updates.
+     * @param table         The routing table of router receiving the updates.
      */
     public Input(int routerId, DatagramSocket inputSocket, RoutingTable table) {
         this.routerId = routerId;
@@ -94,6 +94,7 @@ public class Input {
             try {
                 receiveSocket.receive(receivedPacket);
                 checkValidity(receivedPacket);
+                displayPacketInfo(receivedPacket);
             } catch {
                 System.err.println("Error: Could not receive incoming packet on router ")
             }
@@ -110,7 +111,7 @@ public class Input {
         // Check that the sender is a neighbour (directly connected) to current router
         // Check that the received packet is not sent from the router itself
         int receivedPacketPort = receivedPacket.getPort();
-        if (neighbours.containsValue(receivedPacketPort) && receivedPacket.getAddress().equals(InetAddress.getLocalHost())) {
+        if (neighbours.containsValue(receivedPacketPort) && !receivedPacket.getAddress().equals(InetAddress.getLocalHost())) {
             packetValid = true;
         }
 
@@ -125,7 +126,8 @@ public class Input {
                 byte[] metric = copyOfRange( byte[] message, 0, i + 4)
                 if (Util.byteArrayToInt( byte[] destinationAddress).equals(InetAddress.getLocalHost())){
                     // Check that the metric is between 1 and 16
-                    if (Util.byteArrayToInt( byte[] metric) >=1 && Util.byteArrayToInt( byte[] metric) <=16){
+                    int metricNo = Util.byteArrayToInt(byte[] metric);
+                    if (metricNo >=1 && metricNo <=16){
                         entryValid = true;
                         processUpdate(receivedPacket);
                     }
@@ -139,7 +141,7 @@ public class Input {
     }
 
     public void processUpdate(DatagramPacket receivedPacket) {
-        
+
 
 
 

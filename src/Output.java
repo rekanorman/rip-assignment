@@ -55,7 +55,7 @@ public class Output {
      * of each neighbour to the port number which messages to this neighbour
      * should be sent to.
      */
-    private HashMap<Integer, Integer> neighbours = new HashMap<>();
+    //private HashMap<Integer, Integer> neighbours = new HashMap<>();
 
 
     /**
@@ -79,11 +79,7 @@ public class Output {
         }
 
         // Initialise the neighbours map with the given outputs information.
-        for (int[] neighbour : outputs) {
-            int id = neighbour[2];
-            int portNo = neighbour[0];
-            this.neighbours.put(id, portNo);
-        }
+        table.getNeighbours(outputs);
 
         // Display the neighbours to check they have been initialised correctly.
         System.out.println("Neighbours:\n");
@@ -155,6 +151,7 @@ public class Output {
         for (RoutingTableEntry entry : table.getEntries()) {
             // Add destination router ID as 32-bit field.
             byte[] destIdBytes = Util.intToByteArray(entry.getDestId());
+            // Copies destIdBytes array from index 0 to 4 in the message array
             System.arraycopy(destIdBytes, 0, message, i, 4);
 
             // Add metric as 32-bit field.

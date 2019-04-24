@@ -95,6 +95,7 @@ public class RIPDaemon {
         System.out.println("Initial routing table:\n");
         System.out.println(this.table);
 
+
         // Create a UDP socket for each input port number.
         for (int portNo : inputPorts) {
             try {
@@ -108,6 +109,10 @@ public class RIPDaemon {
         // Arbitrarily choose a socket to use for sending output messages.
         DatagramSocket outputSocket = inputSockets.get(0);
         this.output = new Output(routerId, outputSocket, outputs, this.table);
+
+        // Socket for listening to incoming routing packets
+        DatagramSocket receiveSocket = inputSockets.get(1);
+        this.input = new Input(routerId, receiveSocket, outputs, this.table);
 
         // Send initial response messages.
         this.output.sendUpdates();
