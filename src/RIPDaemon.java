@@ -1,7 +1,17 @@
+import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.SocketException;
+import java.nio.channels.SelectionKey;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.net.InetSocketAddress;
+import java.net.SocketException;
+import java.util.Set;
+import java.util.Iterator;
+import java.net.Socket;
 
 public class RIPDaemon {
     /**
@@ -42,6 +52,11 @@ public class RIPDaemon {
      * these messages every time a response is triggered.
      */
     private Output output;
+
+    /**
+     * Deals with receiving, validating and processing incoming update messages sent from neighbouring routers
+     */
+    private Input input;
 
     /**
      * The time to wait between sending periodic updates (in seconds).
@@ -112,7 +127,7 @@ public class RIPDaemon {
 
         // Socket for listening to incoming routing packets
         DatagramSocket receiveSocket = inputSockets.get(1);
-        this.input = new Input(routerId, receiveSocket, outputs, this.table);
+        this.input = new Input(routerId, receiveSocket, this.table);
 
         // Send initial response messages.
         this.output.sendUpdates();
@@ -150,10 +165,60 @@ public class RIPDaemon {
     }
 
     /**
+     * Instantiates multiple server sockets to listen and uses a Selector to take in a set of channels and blocks until at least
+     * one has a pending connection. Returns the socket that has been selected
+     * @param inputPorts
+     */
+    // TODO: Change to datagram sockets if necessary
+    private Socket selectInputPort(ArrayList<Integer> inputPorts) {
+
+        Selector selector;
+
+        try {
+            selector = Selector.open();
+            while (true) {
+
+                for (int port : inputPorts) {
+                    // Uses a server so that all input ports can be listened to concurrently
+                    ServerSocketChannel server = ServerSocketChannel.open();
+                    server.configureBlocking(false); // This can be set to true if interference occurs
+
+                    // Creates socket for each port number
+                    server.socket().bind(new InetSocketAddress(port));
+                    // Only register when accept event occurs on the socket
+                    server.register(selector, SelectionKey.OP_ACCEPT);
+                }
+
+                while (selector.isOpen()) {
+                    selector.select();
+                    Set readyKeys = selector.selectedKeys();
+                    Iterator iterator = readyKeys.iterator();
+                    while (iterator.hasNext()) {
+                        SelectionKey key = (SelectionKey) iterator.next();
+                        if (key.isAcceptable()) {
+                            SocketChannel receiveSocket = server.accept();
+                            Socket socket = receiveSocket.socket();
+                            return socket;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            Error.error("Error: Could not instantiate input port selector");
+
+        } finally {
+            selector.close();
+            server.close();
+        }
+    }
+
+    /**
      * Enter an infinite loop to wait for events and handle them as needed.
      */
     private void run() {
         // TODO: Use select to block while waiting for events
+
         while (true) {
             // Check it's been long enough since the last triggered update.
             if (!this.triggeredUpdateTimerRunning ||
@@ -193,6 +258,9 @@ public class RIPDaemon {
                                          parser.getOutputs(),
                                          parser.getUpdatePeriod());
 
+        // Don't think selectInputPort should be called here but ¯\_(ツ)_/¯
+        daemon.selectInputPort(parser.getInputPorts());
         daemon.run();
+
     }
 }

@@ -39,6 +39,7 @@ public class Input {
     /**
      * The socket used for listening for incoming packets
      */
+
     private DatagramSocket receiveSocket;
 
     //TODO: Create multiple input sockets for each of the iput port numbers specified in config, all need to be listening for incoming packets at the same time
@@ -65,9 +66,9 @@ public class Input {
      *                          [inputPort, metric, routerId].
      * @param table         The routing table of router receiving the updates.
      */
-    public Input(int routerId, DatagramSocket inputSocket, RoutingTable table) {
+    public Input(int routerId, DatagramSocket receiveSocket, RoutingTable table) {
         this.routerId = routerId;
-        this.inputSocket = inputSocket;
+        this.receiveSocket = receiveSocket;
         this.table = table;
 
         try {
@@ -92,10 +93,12 @@ public class Input {
 
         while (true) {
             try {
+                // Port number just hardcoded for testing purposes at this stage
+                receiveSocket = new DatagramSocket(1200);
                 receiveSocket.receive(receivedPacket);
                 checkValidity(receivedPacket);
                 displayPacketInfo(receivedPacket);
-            } catch {
+            } catch (IOException exception) {
                 System.err.println("Error: Could not receive incoming packet on router ")
             }
         }
@@ -123,10 +126,12 @@ public class Input {
 
                 // Check that the destination address is valid (unicast)
                 byte[] destinationAddress = copyOfRange( byte[] message, 0, i);
+                /*I don't think this location is right but not sure where to locate
+                metric number at this point (going off of Output.createMessage())*/
+                int metricNo = Util.byteArrayToInt(byte[] metric);
                 byte[] metric = copyOfRange( byte[] message, 0, i + 4)
                 if (Util.byteArrayToInt( byte[] destinationAddress).equals(InetAddress.getLocalHost())){
                     // Check that the metric is between 1 and 16
-                    int metricNo = Util.byteArrayToInt(byte[] metric);
                     if (metricNo >=1 && metricNo <=16){
                         entryValid = true;
                         processUpdate(receivedPacket);

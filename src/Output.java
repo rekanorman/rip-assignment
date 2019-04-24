@@ -55,7 +55,7 @@ public class Output {
      * of each neighbour to the port number which messages to this neighbour
      * should be sent to.
      */
-    //private HashMap<Integer, Integer> neighbours = new HashMap<>();
+    private HashMap<Integer, Integer> neighbours = new HashMap<>();
 
 
     /**
