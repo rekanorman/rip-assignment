@@ -13,11 +13,23 @@ public class RoutingTable {
     private HashMap<Integer, RoutingTableEntry> table = new HashMap<>();
 
     /**
+     * The neighbours of this router, represented as a map from router ID to
+     * metric. This map is populated with the values in the config file,
+     * then never modified, and allows the router to keep a record of its
+     * neighbours even if one of them crashes and is therefore removed from
+     * the routing table.
+     */
+    private HashMap<Integer, Integer> neighbours = new HashMap<>();
+
+    /**
      * The main routing daemon object which this table belongs to.
      * Needed to allow updates to be triggered when a route is set to infinity.
      */
     private RIPDaemon daemon;
 
+    /**
+     * The router ID of this router.
+     */
     private int routerId;
 
     /**
@@ -50,6 +62,8 @@ public class RoutingTable {
             int id = neighbour[2];
             int nextHop = id;
             addEntry(id, metric, nextHop);
+
+            this.neighbours.put(id, metric);
         }
     }
 
@@ -61,22 +75,8 @@ public class RoutingTable {
      */
     public void addEntry(int destId, int metric, int nextHop) {
         RoutingTableEntry entry = new RoutingTableEntry(destId, metric, nextHop);
-        entry.setTimeoutTime(LocalTime.now().plusSeconds(timeoutPeriod));
         this.table.put(destId, entry);
-    }
-
-    public HashMap<Integer, Integer> getNeighbours(ArrayList<int[]> outputs) {
-
-        HashMap<Integer, Integer> neighbours = new HashMap<>();
-
-        for (int[] neighbour : outputs) {
-            int id = neighbour[2];
-            int portNo = neighbour[0];
-            neighbours.put(id, portNo);
-        }
-
-        return neighbours;
-
+        resetTimeout(destId);
     }
 
     /**
@@ -111,8 +111,16 @@ public class RoutingTable {
         return table.get(id).getNextHop();
     }
 
-    public boolean hasEntry(int id) {
+    public boolean hasRoute(int id) {
         return table.containsKey(id);
+    }
+
+    public boolean isNeighbour(int id) {
+        return this.neighbours.containsKey(id);
+    }
+
+    public int getMetricToNeighbour(int id) {
+        return this.neighbours.get(id);
     }
 
     public void resetTimeout(int id) {
@@ -163,11 +171,14 @@ public class RoutingTable {
 
     @Override
     public String toString() {
-        String result = String.format("Router: %d\n\n", routerId);
+        String separator = new String(new char[66]).replace("\0", "-") + "\n";
+        String result = "";
+        result += separator;
+        result += String.format("Router %d\n", routerId);
+        result += separator;
         result += String.format("%-20s | %-20s | %-20s\n",
                 "Destination ID", "Next Hop ID", "Metric");
-        result += new String(new char[66]).replace("\0", "-");
-        result += "\n";
+        result += separator;
 
         for (RoutingTableEntry entry : this.table.values()) {
             result += String.format("%-20d | %-20d | %-20d\n",

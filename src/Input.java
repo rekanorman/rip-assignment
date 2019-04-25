@@ -7,34 +7,10 @@ import java.util.*;
 
 
 public class Input {
-
-    /**
-     * Size of the RIP response message header in bytes.
-     */
-    private static final int HEADER_BYTES = 4;
-
-    /**
-     * Size of each RIP entry in a response message in bytes.
-     * TODO: For now, each RIP entry is just Dest ID and Metric, each 32 bits.
-     *       This can be changed if needed.
-     */
-    private static final int RIP_ENTRY_BYTES = 8;
-
-    /**
-     * The value to put in the version field of the response messages.
-     */
-    private static final byte RIP_VERSION = 2;
-
     /**
      * The router ID of the router receiving the updates.
      */
     private int routerId;
-
-    /**
-     * The IP address to receive messages from, initialised to the
-     * localhost address in the constructor.
-     */
-    private InetAddress address;
 
     /**
      * The selector used to select input sockets which are ready to read.
@@ -59,14 +35,16 @@ public class Input {
      * @param routerId      The ID of the router receiving the updates.
      * @param table         The routing table of router receiving the updates.
      */
-    public Input(ArrayList<Integer> inputPorts, int routerId, RoutingTable table) {
+    public Input(ArrayList<Integer> inputPorts, int routerId,
+                 RoutingTable table) {
         this.routerId = routerId;
         this.table = table;
 
         try {
             this.selector = Selector.open();
         } catch (IOException e) {
-            Error.error("Error: Could not instantiate input port selector");
+            Error.error("Error: Could not instantiate input port " +
+                    "selector");
         }
 
         // Register a datagram channel for each input port with the selector.
@@ -106,7 +84,6 @@ public class Input {
                 try {
                     if (channel.receive(inBuffer) != null) {
                         processPacket();
-                        System.out.println("Received packet.");
                     } else {
                         System.err.println("ERROR: no datagram available for " +
                                 "reading from input socket.");
@@ -115,7 +92,6 @@ public class Input {
                     System.err.println("ERROR: could not receive packet from " +
                             "input socket");
                 }
-
             }
         }
 
@@ -127,110 +103,102 @@ public class Input {
      * checking it for validity, then updating the routing table if needed.
      */
     private void processPacket() {
-        inBuffer.rewind();
+        inBuffer.flip();
+
+        // Read the values in the header fields, and check that they are valid.
         int command = inBuffer.get();
         int version = inBuffer.get();
-        int senderId = Util.byteArrayToInt(new byte[] {0, 0, inBuffer.get(), inBuffer.get()});
+        short senderId = inBuffer.getShort();
 
-        System.out.println(String.format("Command: %d\nVersion: %d\nId: %d\n", command, version, senderId));
+        if (command != RIPDaemon.RESPONSE_COMMAND) {
+            System.err.println(String.format("ERROR: Packet received with " +
+                    "incorrect command value of %d.", command));
+            return;
+        }
 
-        table.resetTimeout(senderId);
+        if (version != RIPDaemon.RIP_VERSION) {
+            System.err.println(String.format("ERROR: Packet received with " +
+                    "incorrect version value of %d.", version));
+            return;
+        }
+
+        if (!table.isNeighbour(senderId)) {
+            System.err.println(String.format("ERROR: Packet received with " +
+                    "source router ID of %d, which is not a neighbour.",
+                    senderId));
+            return;
+        }
+
+        System.err.println();
+        System.err.println(String.format("Packet received from %d:",
+                senderId));
+
+        // If a packet if received from a neighbour, the link to the neighbour
+        // must be up, so the route to the neighbour is updated.
+        processEntry(senderId, senderId, 0);
 
         while (inBuffer.hasRemaining()) {
             int destId = inBuffer.getInt();
-            if (destId == 0) {
-                break;
-            }
             int metric = inBuffer.getInt();
-            System.out.println(String.format("Dest Id: %d\nMetric: %d\n", destId, metric));
 
+            if (destId < RIPDaemon.MIN_ROUTER_ID ||
+                    destId > RIPDaemon.MAX_ROUTER_ID) {
+                System.err.println(String.format("ERROR: received packet " +
+                        "with invalid destination ID %d.", destId));
+            }
+
+            if (metric < 1 || metric > RIPDaemon.INFINITY) {
+                System.err.println(String.format("ERROR: received packet " +
+                        "with invalid metric %d.", metric));
+            }
+
+            System.err.println(String.format("  Dest ID: %d  Metric: %d",
+                    destId, metric));
             processEntry(senderId, destId, metric);
         }
+
+        System.err.println();
 
         System.out.println(table);
     }
 
-    private void processEntry(int senderId, int destId, int metricFromNeighbour) {
-        if (destId == senderId || destId == routerId) {
-            return;
-        }
-
-        int metric = metricFromNeighbour + table.getMetric(senderId);
+    /**
+     * Processes a single RIP entry from a received response packet, updating
+     * the routing table as necessary.
+     * @param senderId     ID of router which send the packet.
+     * @param destId       Destination router ID of the RIP entry.
+     * @param metricSent   Metric of the RIP entry.
+     */
+    private void processEntry(int senderId, int destId, int metricSent) {
+        int metric = metricSent + table.getMetricToNeighbour(senderId);
         if (metric > RIPDaemon.INFINITY) {
             metric = RIPDaemon.INFINITY;
         }
 
-        if (table.hasEntry(destId)) {
-            if (table.getNextHop(destId) == senderId || metric < table.getMetric(destId)) {
-                if (metric == RIPDaemon.INFINITY && table.getMetric(destId) != RIPDaemon.INFINITY) {
-                    table.startDeletion(destId);
-                }
+        if (table.hasRoute(destId)) {
+            int currentNextHop = table.getNextHop(destId);
+            int currentMetric = table.getMetric(destId);
 
+            if (senderId == currentNextHop) {
+                table.resetTimeout(destId);
+            }
+
+            if ((senderId == currentNextHop && metric != currentMetric) ||
+                    metric < currentMetric) {
                 table.setMetric(destId, metric);
                 table.setNextHop(destId, senderId);
 
-                if (metric != RIPDaemon.INFINITY) {
-                    System.out.println("Timeout reset");
+                if (metric == RIPDaemon.INFINITY) {
+                    table.startDeletion(destId);
+                } else {
                     table.resetTimeout(destId);
                 }
             }
+
         } else {
             if (metric != RIPDaemon.INFINITY) {
                 table.addEntry(destId, metric, senderId);
             }
         }
-    }
-
-    /**
-     * Checks whether the received packet stored in the inBuffer is valid.
-     * @return Whether the packet is valid.
-     */
-    private boolean packetValid() {
-
-        // TODO: Add logic for ignoring the packet. Not sure how to ignore/discard packet or log it yet
-        boolean packetValid = false;
-        boolean entryValid = false;
-
-
-
-//        int i = 4;
-//        for (byte b : message) {
-//
-//            // Check that the destination address is valid (unicast)
-//            byte[] destinationAddress = Arrays.copyOfRange(message, 0, i);
-//            /*I don't think this location is right but not sure where to locate
-//            metric number at this point (going off of Output.createMessage())*/
-//            byte[] metric = Arrays.copyOfRange(message, 0, i + 4);
-//            int metricNo = Util.byteArrayToInt(metric);
-//
-////                if (Util.byteArrayToInt(destinationAddress) == Util.byteArrayToInt(address)){
-////                    // Check that the metric is between 1 and 16
-////                    if (metricNo >=1 && metricNo <=16){
-////                        entryValid = true;
-////                        processUpdate(receivedPacket);
-////                    }
-////                }
-//
-//            i += RIP_ENTRY_BYTES;
-//
-//        }
-        return false;
-    }
-
-    public void processUpdate(DatagramPacket receivedPacket) {
-
-
-
-
-    }
-
-
-    public void displayPacketInfo(DatagramPacket receivedPacket) {
-        String message = new String(receivedPacket.getData(), receivedPacket.getOffset(), receivedPacket.getLength());
-
-        InetAddress addr = receivedPacket.getAddress();
-        System.out.println("Sent by: " + addr.getHostAddress());
-        System.out.println("Sent from port: " + receivedPacket.getPort());
-        System.out.println("Message: \n" + message);
     }
 }

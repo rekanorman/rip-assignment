@@ -6,18 +6,9 @@ import java.util.Scanner;
 
 public class ConfigFileParser {
     /**
-     * Limits for the parameters specified in the config file.
-     */
-    private static final int MIN_ROUTER_ID = 1;
-    private static final int MAX_ROUTER_ID = 64000;
-    private static final int MIN_PORT_NO = 1024;
-    private static final int MAX_PORT_NO = 64000;
-
-    /**
      * Any line in the config file starting with this string is a comment.
      */
     private static final String COMMENT_STRING = "//";
-
 
     /**
      * The name of the config file being parsed.
@@ -274,8 +265,8 @@ public class ConfigFileParser {
                 Error.error(String.format("Invalid config file: " +
                         "port numbers of outputs must be " +
                         "between %d and %d.",
-                        MIN_PORT_NO,
-                        MAX_PORT_NO));
+                        RIPDaemon.MIN_PORT_NO,
+                        RIPDaemon.MAX_PORT_NO));
             }
 
             // Check that router ID of neighbour is in the right range.
@@ -284,8 +275,8 @@ public class ConfigFileParser {
                 Error.error(String.format("Invalid confing file: " +
                         "router IDs of outputs must be " +
                         "between %d and %d.",
-                        MIN_ROUTER_ID,
-                        MAX_ROUTER_ID));
+                        RIPDaemon.MIN_ROUTER_ID,
+                        RIPDaemon.MAX_ROUTER_ID));
             }
 
             // If the output values are valid, add them to the list of outputs.
@@ -322,11 +313,11 @@ public class ConfigFileParser {
     }
 
     private boolean isValidRouterID(int id) {
-        return id >= MIN_ROUTER_ID && id <= MAX_ROUTER_ID;
+        return id >= RIPDaemon.MIN_ROUTER_ID && id <= RIPDaemon.MAX_ROUTER_ID;
     }
 
     private boolean isValidPortNo(int portNo) {
-        return portNo >= MIN_PORT_NO && portNo <= MAX_PORT_NO;
+        return portNo >= RIPDaemon.MIN_PORT_NO && portNo <= RIPDaemon.MAX_PORT_NO;
     }
 
     /**
@@ -337,8 +328,8 @@ public class ConfigFileParser {
         Error.error(String.format(
                 "Invalid config file: router-id must be " +
                         "a single integer between %d and %d.",
-                MIN_ROUTER_ID,
-                MAX_ROUTER_ID));
+                RIPDaemon.MIN_ROUTER_ID,
+                RIPDaemon.MAX_ROUTER_ID));
     }
 
     /**
@@ -350,8 +341,8 @@ public class ConfigFileParser {
                 "Invalid config file: input-ports must be " +
                         "a non-empty list of integers between %d and %d, " +
                         "separated by spaces.",
-                MIN_PORT_NO,
-                MAX_PORT_NO));
+                RIPDaemon.MIN_PORT_NO,
+                RIPDaemon.MAX_PORT_NO));
     }
 
     /**

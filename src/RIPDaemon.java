@@ -1,18 +1,5 @@
-import java.io.IOException;
-import java.net.DatagramSocket;
-import java.net.SocketException;
-import java.nio.channels.SelectionKey;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
-import java.net.InetSocketAddress;
-import java.net.SocketException;
-import java.util.Collections;
-import java.util.Set;
-import java.util.Iterator;
-import java.net.Socket;
 
 public class RIPDaemon {
     /**
@@ -21,9 +8,42 @@ public class RIPDaemon {
     public static final int INFINITY = 16;
 
     /**
+     * Range of allowed router IDs.
+     */
+    public static final int MIN_ROUTER_ID = 1;
+    public static final int MAX_ROUTER_ID = 64000;
+
+    /**
+     * Range of allowed port numbers.
+     */
+    public static final int MIN_PORT_NO = 1024;
+    public static final int MAX_PORT_NO = 64000;
+
+    /**
      * The maximum allowed size in bytes for response packets.
      */
     public static final int MAX_RESPONSE_PACKET_SIZE = 512;
+
+    /**
+     * Size of the RIP response message header in bytes.
+     */
+    public static final int HEADER_BYTES = 4;
+
+    /**
+     * Size of each RIP entry in a response message in bytes. Each entry
+     * consists of two 32-bit fields: destination router ID and metric.
+     */
+    public static final int RIP_ENTRY_BYTES = 8;
+
+    /**
+     * The value to put in the command field of a response message.
+     */
+    public static final byte RESPONSE_COMMAND = 2;
+
+    /**
+     * The value to put in the version field of the response messages.
+     */
+    public static final byte RIP_VERSION = 2;
 
     /**
      * The ratio of the timeout timer period to the periodic update
@@ -38,15 +58,10 @@ public class RIPDaemon {
     private static final int GARBAGE_COLLECTION_PERIOD_RATIO = 4;
 
     /**
-     * The timeout in milliseconds for the blocking select call used when
-     * waiting for input packets to be received.
+     * The timeout in milliseconds for the blocking select call used to
+     * select readable input sockets.
      */
     private static final int INPUT_SELECT_TIMEOUT = 1000;
-
-    /**
-     * The router ID of this router.
-     */
-    private int id;
 
     /**
      * The routing table of this router, containing an entry for each known
@@ -55,26 +70,22 @@ public class RIPDaemon {
     private RoutingTable table;
 
     /**
-     * A list of the input sockets used to receive messages from neighbours.
-     */
-    private ArrayList<DatagramSocket> inputSockets = new ArrayList<>();
-
-    /**
      * Handles generating response messages for each neighbour, and sending
      * these messages every time a response is triggered.
      */
     private Output output;
 
     /**
-     * Deals with receiving, validating and processing incoming update messages sent from neighbouring routers
+     * Deals with receiving, validating and processing incoming response
+     * messages received from neighbouring routers.
      */
     private Input input;
 
     /**
      * The time to wait between sending periodic updates (in seconds).
-     * Can be specified in the config file, otherwise a default value is used.
+     * Can be specified in the config file, otherwise the default value is used.
      */
-    private int updatePeriod = 3;
+    private int updatePeriod = 5;
 
     /**
      * The next time that periodic update messages should be sent to neighbours.
@@ -103,10 +114,17 @@ public class RIPDaemon {
     private LocalTime nextTriggeredUpdateTime;
 
 
+    /**
+     * Creates a new RIP daemon using the values specified in the config file.
+     * @param routerId      The router ID of the router.
+     * @param inputPorts    A list of the router's input port numbers.
+     * @param outputs       A list of the router's neighbours, in the form
+     *                          [inputPort, metric, routerId].
+     * @param updatePeriod  The update period specified in the config file, or
+     *                          0 if no period was specified.
+     */
     private RIPDaemon(int routerId, ArrayList<Integer> inputPorts,
-                     ArrayList<int[]> outputs, int updatePeriod) {
-        this.id = routerId;
-
+                      ArrayList<int[]> outputs, int updatePeriod) {
         // Set the update timer period to the value in the config file if it
         // was specified.
         if (updatePeriod != 0) {
@@ -115,32 +133,16 @@ public class RIPDaemon {
 
         // Initialise the routing table and display the initial contents.
         int timeoutPeriod = this.updatePeriod * TIMEOUT_PERIOD_RATIO;
-        int garbageCollectionPeriod = this.updatePeriod * GARBAGE_COLLECTION_PERIOD_RATIO;
-
-        this.table = new RoutingTable(this, routerId, outputs, timeoutPeriod,
-                garbageCollectionPeriod);
-        System.out.println("Initial routing table:\n");
-        System.out.println(this.table);
-
-
-        // Create an output UDP socket with an unused port number.
-        int outputPortNo = 1024 + routerId;
-        while (inputPorts.contains(outputPortNo)) {
-            outputPortNo++;
-        }
-
-        DatagramSocket outputSocket;
-        try {
-            outputSocket = new DatagramSocket(outputPortNo);
-        } catch (SocketException e) {
-            Error.error(String.format("Could not bind output socket to port %d.",
-                    outputPortNo));
-            return;
-        }
-
-        this.output = new Output(routerId, outputSocket, outputs, this.table);
+        int garbageCollectionPeriod = this.updatePeriod
+                * GARBAGE_COLLECTION_PERIOD_RATIO;
+        this.table = new RoutingTable(this, routerId, outputs,
+                timeoutPeriod, garbageCollectionPeriod);
 
         this.input = new Input(inputPorts, routerId, this.table);
+
+        // Arbitrarily choose an output port number.
+        int outputPortNo = inputPorts.get(0) + 1;
+        this.output = new Output(routerId, outputPortNo, outputs, this.table);
 
         // Send initial response messages.
         this.output.sendUpdates();
@@ -163,53 +165,54 @@ public class RIPDaemon {
         double randomMultiplier = Math.random() * 0.4 + 0.8;
         double randomPeriodSeconds = updatePeriod * randomMultiplier;
         long randomPeriodNanos = (long) (randomPeriodSeconds * 1000000000);
-        this.nextPeriodicUpdateTime = LocalTime.now().plusNanos(randomPeriodNanos);
+        nextPeriodicUpdateTime = LocalTime.now().plusNanos(randomPeriodNanos);
     }
 
     /**
      * Sets the nextTriggeredUpdateTime to the current time plus a random time
      * between 1 and 5 seconds.
-     * TODO: Maybe make this time shorter for testing.
      */
     private void setNextTriggeredUpdateTime() {
         double waitTimeSeconds = Math.random() * 4 + 1;
         long waitTimeNanos  = (long) (waitTimeSeconds * 1000000000);
-        this.nextTriggeredUpdateTime = LocalTime.now().plusNanos(waitTimeNanos);
+        nextTriggeredUpdateTime = LocalTime.now().plusNanos(waitTimeNanos);
+    }
+
+    /**
+     * Sends an update either if it's time to send a periodic update or if an
+     * update has been triggered, provided enough time has passed since the
+     * last triggered update.
+     */
+    private void sendUpdateIfTime() {
+        if (!this.triggeredUpdateTimerRunning ||
+                LocalTime.now().isAfter(this.nextTriggeredUpdateTime)) {
+
+            if (LocalTime.now().isAfter(nextPeriodicUpdateTime)) {
+                // Periodic update suppresses any triggered updates.
+                this.output.sendUpdates();
+                setNextPeriodicUpdateTime();
+                this.updateTriggered = false;
+                this.triggeredUpdateTimerRunning = false;
+
+            } else if (this.updateTriggered) {
+                this.output.sendUpdates();
+                this.updateTriggered = false;
+                this.triggeredUpdateTimerRunning = true;
+                setNextTriggeredUpdateTime();
+            }
+        }
     }
 
     /**
      * Enter an infinite loop to wait for events and handle them as needed.
      */
     private void run() {
-        // TODO: Use select to block while waiting for events
-
         while (true) {
             // Use a blocking select call to wait for response packets to be
             // received, then process any received packets.
             input.waitForMessages(INPUT_SELECT_TIMEOUT);
 
-            // Check it's been long enough since the last triggered update to
-            // send the next periodic or triggered update.
-            if (!this.triggeredUpdateTimerRunning ||
-                    LocalTime.now().isAfter(this.nextTriggeredUpdateTime)) {
-                if (LocalTime.now().isAfter(nextPeriodicUpdateTime)) {
-                    // Periodic update suppresses any triggered updates.
-                    System.out.println("Sending periodic update.");
-                    this.output.sendUpdates();
-                    setNextPeriodicUpdateTime();
-                    this.updateTriggered = false;
-                    this.triggeredUpdateTimerRunning = false;
-
-                } else if (this.updateTriggered) {
-                    System.out.println("Sending triggered update.");
-                    this.output.sendUpdates();
-                    this.updateTriggered = false;
-                    this.triggeredUpdateTimerRunning = true;
-                    setNextTriggeredUpdateTime();
-                }
-            }
-
-            // Check the timers in the routing table.
+            sendUpdateIfTime();
             this.table.checkTimers();
         }
     }
