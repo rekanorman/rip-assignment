@@ -18,6 +18,8 @@ public class RoutingTable {
      */
     private RIPDaemon daemon;
 
+    private int routerId;
+
     /**
      * The time after which routing table entries timeout. Set with a fixed
      * ratio relative to the periodic update period.
@@ -36,9 +38,10 @@ public class RoutingTable {
      * the routing table with this information.
      * @param neighbours  A list containing information about each neighbour.
      */
-    public RoutingTable(RIPDaemon daemon, ArrayList<int[]> neighbours,
+    public RoutingTable(RIPDaemon daemon, int routerId, ArrayList<int[]> neighbours,
                         int timeoutPeriod, int garbageCollectionPeriod) {
         this.daemon = daemon;
+        this.routerId = routerId;
         this.timeoutPeriod = timeoutPeriod;
         this.garbageCollectionPeriod = garbageCollectionPeriod;
 
@@ -56,7 +59,7 @@ public class RoutingTable {
      * @param metric   The metric to reach the destination.
      * @param nextHop  The ID of the next hop router to reach the destination.
      */
-    private void addEntry(int destId, int metric, int nextHop) {
+    public void addEntry(int destId, int metric, int nextHop) {
         RoutingTableEntry entry = new RoutingTableEntry(destId, metric, nextHop);
         entry.setTimeoutTime(LocalTime.now().plusSeconds(timeoutPeriod));
         this.table.put(destId, entry);
@@ -90,6 +93,30 @@ public class RoutingTable {
      */
     public Collection<RoutingTableEntry> getEntries() {
         return table.values();
+    }
+
+    public int getMetric(int id) {
+        return table.get(id).getMetric();
+    }
+
+    public void setMetric(int id, int metric) {
+        table.get(id).setMetric(metric);
+    }
+
+    public void setNextHop(int id, int nextHop) {
+        table.get(id).setNextHop(nextHop);
+    }
+
+    public int getNextHop(int id) {
+        return table.get(id).getNextHop();
+    }
+
+    public boolean hasEntry(int id) {
+        return table.containsKey(id);
+    }
+
+    public void resetTimeout(int id) {
+        table.get(id).setTimeoutTime(LocalTime.now().plusSeconds(timeoutPeriod));
     }
 
     /**
@@ -136,7 +163,8 @@ public class RoutingTable {
 
     @Override
     public String toString() {
-        String result = String.format("%-20s | %-20s | %-20s\n",
+        String result = String.format("Router: %d\n\n", routerId);
+        result += String.format("%-20s | %-20s | %-20s\n",
                 "Destination ID", "Next Hop ID", "Metric");
         result += new String(new char[66]).replace("\0", "-");
         result += "\n";

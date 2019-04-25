@@ -74,7 +74,7 @@ public class RIPDaemon {
      * The time to wait between sending periodic updates (in seconds).
      * Can be specified in the config file, otherwise a default value is used.
      */
-    private int updatePeriod = 10;
+    private int updatePeriod = 3;
 
     /**
      * The next time that periodic update messages should be sent to neighbours.
@@ -117,7 +117,7 @@ public class RIPDaemon {
         int timeoutPeriod = this.updatePeriod * TIMEOUT_PERIOD_RATIO;
         int garbageCollectionPeriod = this.updatePeriod * GARBAGE_COLLECTION_PERIOD_RATIO;
 
-        this.table = new RoutingTable(this, outputs, timeoutPeriod,
+        this.table = new RoutingTable(this, routerId, outputs, timeoutPeriod,
                 garbageCollectionPeriod);
         System.out.println("Initial routing table:\n");
         System.out.println(this.table);
@@ -177,60 +177,6 @@ public class RIPDaemon {
         this.nextTriggeredUpdateTime = LocalTime.now().plusNanos(waitTimeNanos);
     }
 
-//    /**
-//     * Instantiates multiple server sockets to listen and uses a Selector to
-//     * take in a set of channels and blocks until at least one has a pending
-//     * connection. Returns the socket that has been selected (?)
-//     * @param inputPorts
-//     */
-//    // TODO: Change to datagram sockets if necessary
-//    private Socket selectInputPort(ArrayList<Integer> inputPorts) {
-//
-//        Selector selector;
-//        Socket socket;
-//
-//        try {
-//            selector = Selector.open();
-//            while (true) {
-//
-//                for (int port : inputPorts) {
-//                    // Uses a server so that all input ports can be listened to concurrently
-//                    ServerSocketChannel server = ServerSocketChannel.open();
-//                    server.configureBlocking(false); // This can be set to true if interference occurs
-//
-//                    // Creates socket for each port number
-//                    server.socket().bind(new InetSocketAddress(port));
-//                    // Only register when accept event occurs on the socket
-//                    server.register(selector, SelectionKey.OP_ACCEPT);
-//                }
-//
-//                while (selector.isOpen()) {
-//                    selector.select();
-//                    Set readyKeys = selector.selectedKeys();
-//                    Iterator iterator = readyKeys.iterator();
-//                    while (iterator.hasNext()) {
-//                        SelectionKey key = (SelectionKey) iterator.next();
-//                        if (key.isAcceptable()) {
-//                            SocketChannel receiveSocket = server.accept();
-//                            socket = receiveSocket.socket();
-//                            return socket;
-//                            break;
-//                        }
-//                    }
-//                }
-//            }
-//        } catch (IOException exception) {
-//            Error.error("Error: Could not instantiate input port selector");
-//
-//        } finally {
-//            // Close sockets and servers
-//            //selector = Selector.close();
-//            //socket.close();
-//        }
-//        return socket;
-//
-//    }
-
     /**
      * Enter an infinite loop to wait for events and handle them as needed.
      */
@@ -281,8 +227,6 @@ public class RIPDaemon {
                                          parser.getOutputs(),
                                          parser.getUpdatePeriod());
 
-        // Don't think selectInputPort should be called here but ¯\_(ツ)_/¯
-//        daemon.selectInputPort(parser.getInputPorts());
         daemon.run();
     }
 }
