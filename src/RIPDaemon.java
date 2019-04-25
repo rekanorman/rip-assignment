@@ -9,6 +9,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
+import java.util.Collections;
 import java.util.Set;
 import java.util.Iterator;
 import java.net.Socket;
@@ -18,6 +19,11 @@ public class RIPDaemon {
      * The metric value used to represent infinity.
      */
     public static final int INFINITY = 16;
+
+    /**
+     * The maximum allowed size in bytes for response packets.
+     */
+    public static final int MAX_RESPONSE_PACKET_SIZE = 512;
 
     /**
      * The ratio of the timeout timer period to the periodic update
@@ -30,6 +36,12 @@ public class RIPDaemon {
      * timer period.
      */
     private static final int GARBAGE_COLLECTION_PERIOD_RATIO = 4;
+
+    /**
+     * The timeout in milliseconds for the blocking select call used when
+     * waiting for input packets to be received.
+     */
+    private static final int INPUT_SELECT_TIMEOUT = 1000;
 
     /**
      * The router ID of this router.
@@ -111,23 +123,24 @@ public class RIPDaemon {
         System.out.println(this.table);
 
 
-        // Create a UDP socket for each input port number.
-        for (int portNo : inputPorts) {
-            try {
-                this.inputSockets.add(new DatagramSocket(portNo));
-            } catch (SocketException e) {
-                Error.error(String.format("Could not bind socket to port %d.",
-                        portNo));
-            }
+        // Create an output UDP socket with an unused port number.
+        int outputPortNo = 1024 + routerId;
+        while (inputPorts.contains(outputPortNo)) {
+            outputPortNo++;
         }
 
-        // Arbitrarily choose a socket to use for sending output messages.
-        DatagramSocket outputSocket = inputSockets.get(0);
+        DatagramSocket outputSocket;
+        try {
+            outputSocket = new DatagramSocket(outputPortNo);
+        } catch (SocketException e) {
+            Error.error(String.format("Could not bind output socket to port %d.",
+                    outputPortNo));
+            return;
+        }
+
         this.output = new Output(routerId, outputSocket, outputs, this.table);
 
-        // Socket for listening to incoming routing packets
-        DatagramSocket receiveSocket = inputSockets.get(1);
-        this.input = new Input(routerId, receiveSocket, this.table);
+        this.input = new Input(inputPorts, routerId, this.table);
 
         // Send initial response messages.
         this.output.sendUpdates();
@@ -164,58 +177,59 @@ public class RIPDaemon {
         this.nextTriggeredUpdateTime = LocalTime.now().plusNanos(waitTimeNanos);
     }
 
-    /**
-     * Instantiates multiple server sockets to listen and uses a Selector to take in a set of channels and blocks until at least
-     * one has a pending connection. Returns the socket that has been selected (?)
-     * @param inputPorts
-     */
-    // TODO: Change to datagram sockets if necessary
-    private Socket selectInputPort(ArrayList<Integer> inputPorts) {
-
-        Selector selector;
-        Socket socket;
-
-        try {
-            selector = Selector.open();
-            while (true) {
-
-                for (int port : inputPorts) {
-                    // Uses a server so that all input ports can be listened to concurrently
-                    ServerSocketChannel server = ServerSocketChannel.open();
-                    server.configureBlocking(false); // This can be set to true if interference occurs
-
-                    // Creates socket for each port number
-                    server.socket().bind(new InetSocketAddress(port));
-                    // Only register when accept event occurs on the socket
-                    server.register(selector, SelectionKey.OP_ACCEPT);
-                }
-
-                while (selector.isOpen()) {
-                    selector.select();
-                    Set readyKeys = selector.selectedKeys();
-                    Iterator iterator = readyKeys.iterator();
-                    while (iterator.hasNext()) {
-                        SelectionKey key = (SelectionKey) iterator.next();
-                        if (key.isAcceptable()) {
-                            SocketChannel receiveSocket = server.accept();
-                            socket = receiveSocket.socket();
-                            return socket;
-                            break;
-                        }
-                    }
-                }
-            }
-        } catch (IOException exception) {
-            Error.error("Error: Could not instantiate input port selector");
-
-        } finally {
-            // Close sockets and servers
-            //selector = Selector.close();
-            //socket.close();
-        }
-        return socket;
-
-    }
+//    /**
+//     * Instantiates multiple server sockets to listen and uses a Selector to
+//     * take in a set of channels and blocks until at least one has a pending
+//     * connection. Returns the socket that has been selected (?)
+//     * @param inputPorts
+//     */
+//    // TODO: Change to datagram sockets if necessary
+//    private Socket selectInputPort(ArrayList<Integer> inputPorts) {
+//
+//        Selector selector;
+//        Socket socket;
+//
+//        try {
+//            selector = Selector.open();
+//            while (true) {
+//
+//                for (int port : inputPorts) {
+//                    // Uses a server so that all input ports can be listened to concurrently
+//                    ServerSocketChannel server = ServerSocketChannel.open();
+//                    server.configureBlocking(false); // This can be set to true if interference occurs
+//
+//                    // Creates socket for each port number
+//                    server.socket().bind(new InetSocketAddress(port));
+//                    // Only register when accept event occurs on the socket
+//                    server.register(selector, SelectionKey.OP_ACCEPT);
+//                }
+//
+//                while (selector.isOpen()) {
+//                    selector.select();
+//                    Set readyKeys = selector.selectedKeys();
+//                    Iterator iterator = readyKeys.iterator();
+//                    while (iterator.hasNext()) {
+//                        SelectionKey key = (SelectionKey) iterator.next();
+//                        if (key.isAcceptable()) {
+//                            SocketChannel receiveSocket = server.accept();
+//                            socket = receiveSocket.socket();
+//                            return socket;
+//                            break;
+//                        }
+//                    }
+//                }
+//            }
+//        } catch (IOException exception) {
+//            Error.error("Error: Could not instantiate input port selector");
+//
+//        } finally {
+//            // Close sockets and servers
+//            //selector = Selector.close();
+//            //socket.close();
+//        }
+//        return socket;
+//
+//    }
 
     /**
      * Enter an infinite loop to wait for events and handle them as needed.
@@ -224,7 +238,12 @@ public class RIPDaemon {
         // TODO: Use select to block while waiting for events
 
         while (true) {
-            // Check it's been long enough since the last triggered update.
+            // Use a blocking select call to wait for response packets to be
+            // received, then process any received packets.
+            input.waitForMessages(INPUT_SELECT_TIMEOUT);
+
+            // Check it's been long enough since the last triggered update to
+            // send the next periodic or triggered update.
             if (!this.triggeredUpdateTimerRunning ||
                     LocalTime.now().isAfter(this.nextTriggeredUpdateTime)) {
                 if (LocalTime.now().isAfter(nextPeriodicUpdateTime)) {
@@ -263,8 +282,7 @@ public class RIPDaemon {
                                          parser.getUpdatePeriod());
 
         // Don't think selectInputPort should be called here but ¯\_(ツ)_/¯
-        daemon.selectInputPort(parser.getInputPorts());
+//        daemon.selectInputPort(parser.getInputPorts());
         daemon.run();
-
     }
 }

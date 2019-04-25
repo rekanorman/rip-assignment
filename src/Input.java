@@ -1,12 +1,9 @@
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.lang.Integer;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Arrays;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.*;
 
 
 public class Input {
@@ -29,7 +26,7 @@ public class Input {
     private static final byte RIP_VERSION = 2;
 
     /**
-     * The router ID of the router receiving the updates
+     * The router ID of the router receiving the updates.
      */
     private int routerId;
 
@@ -40,68 +37,125 @@ public class Input {
     private InetAddress address;
 
     /**
-     * The socket used for listening for incoming packets
+     * The selector used to select input sockets which are ready to read.
      */
-
-    private DatagramSocket receiveSocket;
-
-    //TODO: Create multiple input sockets for each of the iput port numbers specified in config, all need to be listening for incoming packets at the same time
+    private Selector selector;
 
     /**
-     * Routing table of receiving router
+     * Routing table of receiving router.
      */
     private RoutingTable table;
 
     /**
-     * Output ports of the router
+     * A byte buffer to store data received from the input sockets.
      */
-    private ArrayList<int[]> outputs;
+    private ByteBuffer inBufffer = ByteBuffer.allocate(
+            RIPDaemon.MAX_RESPONSE_PACKET_SIZE);
 
-    private ArrayList<int[]> inputPorts;
-
-    private HashMap<Integer, Integer> neighbours = table.getNeighbours(outputs);
 
     /**
-     * Creates a new Input object for receiving update messages from neighbours
-     * @param routerId       The ID of the router receiving the updates.
-     * @param outputSocket  A datagram socket used to listen for the response packets.
-     * @param outputs       A list of the router's neighbours, in the form
-     *                          [inputPort, metric, routerId].
+     * Creates a new Input object for receiving update messages from neighbours.
+     * @param inputPorts    A list of the port numbers to use for input sockets.
+     * @param routerId      The ID of the router receiving the updates.
      * @param table         The routing table of router receiving the updates.
      */
-    public Input(int routerId, DatagramSocket receiveSocket, RoutingTable table) {
+    public Input(ArrayList<Integer> inputPorts, int routerId, RoutingTable table) {
         this.routerId = routerId;
-        this.receiveSocket = receiveSocket;
         this.table = table;
 
-
-        waitForMessage();
-
-    }
-
-
-    public void waitForMessage() {
-
-        // Parameters for receiving packet
-        int messageSize = HEADER_BYTES + table.numEntries() * RIP_ENTRY_BYTES;
-        byte[] messageBuf = new byte[messageSize];
-
-        // Constructs a DatagramPacket for receiving packets of length messageSize
-        DatagramPacket receivedPacket = new DatagramPacket(messageBuf, messageSize);
-
-        while (true) {
-            try {
-                // Port number just hardcoded for testing purposes at this stage
-                receiveSocket = new DatagramSocket(1200);
-                receiveSocket.receive(receivedPacket);
-                checkValidity(receivedPacket);
-                displayPacketInfo(receivedPacket);
-            } catch (IOException exception) {
-                System.err.println("Error: Could not receive incoming packet on router ")
-            }
+        try {
+            this.selector = Selector.open();
+        } catch (IOException e) {
+            Error.error("Error: Could not instantiate input port selector");
         }
 
+        // Register a datagram channel for each input port with the selector.
+        for (int port : inputPorts) {
+            try {
+                DatagramChannel channel = DatagramChannel.open();
+                channel.configureBlocking(false);
+                channel.socket().bind(new InetSocketAddress(port));
+                channel.register(selector, SelectionKey.OP_READ);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                Error.error(String.format("Error opening input socket " +
+                        "with port number %d", port));
+            }
+        }
     }
+
+    /**
+     * Waits for response messages to be received using a blocking select call,
+     * then processes any messages received, updating the routing table if
+     * necessary.
+     * @param selectTimeout The timeout in milliseconds for the select call.
+     */
+    public void waitForMessages(int selectTimeout) {
+        try {
+            selector.select(selectTimeout);
+        } catch (IOException e) {
+            System.err.println("Error selecting readable input sockets.");
+            return;
+        }
+
+        System.out.println(selector.selectedKeys().size());
+
+        Iterator selectedKeys = selector.selectedKeys().iterator();
+        while (selectedKeys.hasNext()) {
+            SelectionKey key = (SelectionKey) selectedKeys.next();
+            if (key.isReadable()) {
+                inBufffer.clear();
+                DatagramChannel channel = (DatagramChannel) key.channel();
+                try {
+                    if (channel.receive(inBufffer) != null) {
+                        processPacket();
+                        System.out.println("Received packet.");
+                    } else {
+                        System.err.println("ERROR: no datagram available for " +
+                                "reading from input socket.");
+                        System.out.println(channel.getLocalAddress());
+                    }
+                } catch (IOException e) {
+                    System.err.println("ERROR: could not receive packet from " +
+                            "input socket");
+                }
+
+            }
+        }
+    }
+
+    /**
+     * Processes the received response packet currently stored in the inBuffer,
+     * checking it for validity, then updating the routing table if needed.
+     */
+    private void processPacket() {
+
+    }
+
+
+//    public void waitForMessage() {
+//
+//        // Parameters for receiving packet
+//        int messageSize = HEADER_BYTES + table.numEntries() * RIP_ENTRY_BYTES;
+//        byte[] messageBuf = new byte[messageSize];
+//
+//        // Constructs a DatagramPacket for receiving packets of length messageSize
+//        DatagramPacket receivedPacket = new DatagramPacket(messageBuf, messageSize);
+//
+//        while (true) {
+//            try {
+//                // Port number just hardcoded for testing purposes at this stage
+//                receiveSocket = new DatagramSocket(1200);
+//                receiveSocket.receive(receivedPacket);
+//                checkValidity(receivedPacket);
+//                displayPacketInfo(receivedPacket);
+//            } catch (IOException exception) {
+//                System.err.println("Error: Could not receive incoming packet on router ");
+//            }
+//        }
+//
+//    }
 
     public void checkValidity(DatagramPacket receivedPacket) {
 
@@ -118,9 +172,9 @@ public class Input {
         // Check that the sender is a neighbour (directly connected) to current router
         // Check that the received packet is not sent from the router itself
         int receivedPacketPort = receivedPacket.getPort();
-        if (neighbours.containsValue(receivedPacketPort) && !receivedPacket.getAddress().equals(address)) {
-            packetValid = true;
-        }
+//        if (neighbours.containsValue(receivedPacketPort) && !receivedPacket.getAddress().equals(address)) {
+//            packetValid = true;
+//        }
 
         if (packetValid) {
             byte[] message = receivedPacket.getData();
@@ -135,13 +189,13 @@ public class Input {
                 byte[] metric = Arrays.copyOfRange(message, 0, i + 4);
                 int metricNo = Util.byteArrayToInt(metric);
 
-                if (Util.byteArrayToInt(destinationAddress).equals(Util.bteArrayToInt(address))){
-                    // Check that the metric is between 1 and 16
-                    if (metricNo >=1 && metricNo <=16){
-                        entryValid = true;
-                        processUpdate(receivedPacket);
-                    }
-                }
+//                if (Util.byteArrayToInt(destinationAddress) == Util.byteArrayToInt(address)){
+//                    // Check that the metric is between 1 and 16
+//                    if (metricNo >=1 && metricNo <=16){
+//                        entryValid = true;
+//                        processUpdate(receivedPacket);
+//                    }
+//                }
 
                 i += RIP_ENTRY_BYTES;
 
@@ -164,6 +218,6 @@ public class Input {
         InetAddress addr = receivedPacket.getAddress();
         System.out.println("Sent by: " + addr.getHostAddress());
         System.out.println("Sent from port: " + receivedPacket.getPort());
-        System.out.println("Message: \n" + messsage);
+        System.out.println("Message: \n" + message);
     }
 }

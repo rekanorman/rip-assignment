@@ -79,7 +79,7 @@ public class Output {
         }
 
         // Initialise the neighbours map with the given outputs information.
-        table.getNeighbours(outputs);
+        this.neighbours = table.getNeighbours(outputs);
 
         // Display the neighbours to check they have been initialised correctly.
         System.out.println("Neighbours:\n");
@@ -114,6 +114,12 @@ public class Output {
      */
     private void sendUpdate(int neighbourId, int portNo) {
         byte[] responseMessage = createResponseMessage(neighbourId);
+
+        if (responseMessage.length > RIPDaemon.MAX_RESPONSE_PACKET_SIZE) {
+            System.err.println(String.format("ERROR: response message to " +
+                    "router %d too large, packet not sent.", neighbourId));
+            return;
+        }
 
         DatagramPacket responsePacket = new DatagramPacket(responseMessage,
                 responseMessage.length, this.destAddress, portNo);
