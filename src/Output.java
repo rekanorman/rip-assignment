@@ -127,11 +127,11 @@ public class Output {
 
         // Add an RIP entry for each entry in the routing table, setting the
         // metric to infinity if the next hop is the neighbour itself.
-        for (RoutingTableEntry entry : table.getEntries()) {
-            message.putInt(entry.getDestId());
+        for (int destId : table.allDestIds()) {
+            message.putInt(destId);
 
-            int metric = entry.getMetric();
-            if (entry.getNextHop() == neighbourId) {
+            int metric = table.getMetric(destId);
+            if (table.getNextHop(destId) == neighbourId) {
                 metric = RIPDaemon.INFINITY;
             }
             message.putInt((metric));

@@ -138,7 +138,7 @@ public class RIPDaemon {
         this.table = new RoutingTable(this, routerId, outputs,
                 timeoutPeriod, garbageCollectionPeriod);
 
-        this.input = new Input(inputPorts, routerId, this.table);
+        this.input = new Input(inputPorts, this.table);
 
         // Arbitrarily choose an output port number.
         int outputPortNo = inputPorts.get(0) + 1;
@@ -195,6 +195,7 @@ public class RIPDaemon {
                 this.triggeredUpdateTimerRunning = false;
 
             } else if (this.updateTriggered) {
+                System.err.println("Triggered update sent.");
                 this.output.sendUpdates();
                 this.updateTriggered = false;
                 this.triggeredUpdateTimerRunning = true;
@@ -214,6 +215,9 @@ public class RIPDaemon {
 
             sendUpdateIfTime();
             this.table.checkTimers();
+
+            // Display the current state of the routing table.
+            System.out.println(this.table);
         }
     }
 

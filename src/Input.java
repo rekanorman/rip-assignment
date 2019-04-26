@@ -1,17 +1,13 @@
 import java.io.IOException;
 import java.net.*;
 import java.lang.Integer;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.*;
 
 
 public class Input {
-    /**
-     * The router ID of the router receiving the updates.
-     */
-    private int routerId;
-
     /**
      * The selector used to select input sockets which are ready to read.
      */
@@ -32,12 +28,9 @@ public class Input {
     /**
      * Creates a new Input object for receiving update messages from neighbours.
      * @param inputPorts    A list of the port numbers to use for input sockets.
-     * @param routerId      The ID of the router receiving the updates.
      * @param table         The routing table of router receiving the updates.
      */
-    public Input(ArrayList<Integer> inputPorts, int routerId,
-                 RoutingTable table) {
-        this.routerId = routerId;
+    public Input(ArrayList<Integer> inputPorts, RoutingTable table) {
         this.table = table;
 
         try {
@@ -138,18 +131,27 @@ public class Input {
         processEntry(senderId, senderId, 0);
 
         while (inBuffer.hasRemaining()) {
-            int destId = inBuffer.getInt();
-            int metric = inBuffer.getInt();
+            int destId, metric;
+            try {
+                destId = inBuffer.getInt();
+                metric = inBuffer.getInt();
+            } catch (BufferOverflowException e) {
+                System.err.println(String.format("ERROR: Invalid packet " +
+                        "received from router %d.", senderId));
+                return;
+            }
 
             if (destId < RIPDaemon.MIN_ROUTER_ID ||
                     destId > RIPDaemon.MAX_ROUTER_ID) {
                 System.err.println(String.format("ERROR: received packet " +
                         "with invalid destination ID %d.", destId));
+                continue;
             }
 
             if (metric < 1 || metric > RIPDaemon.INFINITY) {
                 System.err.println(String.format("ERROR: received packet " +
                         "with invalid metric %d.", metric));
+                continue;
             }
 
             System.err.println(String.format("  Dest ID: %d  Metric: %d",
@@ -158,8 +160,6 @@ public class Input {
         }
 
         System.err.println();
-
-        System.out.println(table);
     }
 
     /**
@@ -179,7 +179,7 @@ public class Input {
             int currentNextHop = table.getNextHop(destId);
             int currentMetric = table.getMetric(destId);
 
-            if (senderId == currentNextHop) {
+            if (senderId == currentNextHop && metric != RIPDaemon.INFINITY) {
                 table.resetTimeout(destId);
             }
 
