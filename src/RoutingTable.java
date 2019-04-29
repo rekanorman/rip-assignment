@@ -44,7 +44,6 @@ public class RoutingTable {
      */
     private int garbageCollectionPeriod;
 
-
     /**
      * Takes a list containing information about each of the router's
      * neighbours in the form [inputPort, metric, routerId], and initialises

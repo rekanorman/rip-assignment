@@ -24,7 +24,6 @@ public class Input {
     private ByteBuffer inBuffer = ByteBuffer.allocate(
             RIPDaemon.MAX_RESPONSE_PACKET_SIZE);
 
-
     /**
      * Creates a new Input object for receiving update messages from neighbours.
      * @param inputPorts    A list of the port numbers to use for input sockets.

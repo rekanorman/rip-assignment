@@ -33,7 +33,6 @@ public class Output {
      */
     private HashMap<Integer, Integer> neighbours = new HashMap<>();
 
-
     /**
      * Creates a new Output object for sending response messages to neighbours.
      * @param routerId      The ID of the router sending the updates.
@@ -50,6 +49,7 @@ public class Output {
         try {
             this.outputSocket = new DatagramSocket(outputPortNo);
         } catch (SocketException e) {
+            e.printStackTrace();
             Error.error(String.format("ERROR: could not open output " +
                     "socket with port number %d.", outputPortNo));
         }

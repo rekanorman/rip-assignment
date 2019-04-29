@@ -21,6 +21,7 @@ public class ConfigFileParser {
     private int routerId;
     private ArrayList<Integer> inputPorts = new ArrayList<>();
     private ArrayList<int[]> outputs = new ArrayList<>();
+    private int outputPort;
     private int updatePeriod;
 
     /**
@@ -30,8 +31,8 @@ public class ConfigFileParser {
     private boolean routerIdSet = false;
     private boolean inputPortsSet = false;
     private boolean outputsSet = false;
+    private boolean outputPortSet = false;
     private boolean updatePeriodSet = false;
-
 
     /**
      * Create a new ConfigFileParser to parse the given file.
@@ -67,10 +68,18 @@ public class ConfigFileParser {
     }
 
     /**
+     * Get the output port number. Should be called after parsing the file.
+     * @return  Output port number.
+     */
+    public int getOutputPort() {
+        return outputPort;
+    }
+
+    /**
      * Get the update period. If it was not specified in the config file,
      * returns 0.
      * Should be called after parsing the file.
-     * @return  List of outputs.
+     * @return  Update period if it was specified, otherwise 0.
      */
     public int getUpdatePeriod() {
         if (updatePeriodSet) {
@@ -110,19 +119,36 @@ public class ConfigFileParser {
             Error.error("Invalid config file: missing outputs.");
         }
 
-        // Check that the output port numbers are all different from the input
-        // port numbers, and that the neighbour router IDs are all different
-        // from this router's ID.
+        if (!outputPortSet) {
+            Error.error("Invalid config file: missing output port.");
+        }
+
+        // Check that the neighbours' port numbers are all different from this
+        // router's input port numbers and output port number, and that the
+        // neighbours' router IDs are all different from this router's ID.
         for (int[] output : this.outputs) {
             if (this.inputPorts.contains(output[0])) {
-                Error.error("Invalid config file: output port " +
+                Error.error("Invalid config file: neighbours' port " +
                         "numbers must be different from input port numbers.");
+            }
+
+            if (output[0] == this.outputPort) {
+                Error.error("Invalid config file: neighbours' port " +
+                        "numbers must be different from this router's output " +
+                        "port number.");
             }
 
             if (this.routerId == output[2]) {
                 Error.error("Invalid config file: output router " +
                         "IDs must be different from router-id.");
             }
+        }
+
+        // Check that this router's output port number is different from its
+        // input port numbers.
+        if (this.inputPorts.contains(this.outputPort)) {
+            Error.error("Invalid config file: output port number " +
+                    "must be different from input port numbers.");
         }
     }
 
@@ -143,28 +169,40 @@ public class ConfigFileParser {
 
         if (parameter.equals("router-id")) {
             if (this.routerIdSet) {
-                Error.error("Invalid config file: router-id defined more than once.");
+                Error.error("Invalid config file: router-id defined " +
+                        "more than once.");
             } else {
                 parseRouterId(Arrays.copyOfRange(tokens,1, tokens.length));
             }
 
         } else if (parameter.equals("input-ports")) {
             if (this.inputPortsSet) {
-                Error.error("Invalid config file: input-ports defined more than once.");
+                Error.error("Invalid config file: input-ports defined " +
+                        "more than once.");
             } else {
                 parseInputPorts(Arrays.copyOfRange(tokens,1, tokens.length));
             }
 
         } else if (parameter.equals("outputs")) {
             if (this.outputsSet) {
-                Error.error("Invalid config file: outputs defined more than once.");
+                Error.error("Invalid config file: outputs defined " +
+                        "more than once.");
             } else {
                 parseOutputs(Arrays.copyOfRange(tokens, 1, tokens.length));
             }
 
+        } else if (parameter.equals("output-port")) {
+            if (this.outputPortSet) {
+                Error.error("Invalid config file: output port defined " +
+                        "more than once.");
+            } else {
+                parseOutputPort(Arrays.copyOfRange(tokens, 1, tokens.length));
+            }
+
         } else if (parameter.equals("update-period")) {
             if (this.updatePeriodSet) {
-                Error.error("Invalid config file: update-period defined more than once.");
+                Error.error("Invalid config file: update-period defined " +
+                        "more than once.");
             } else {
                 parseUpdatePeriod(Arrays.copyOfRange(tokens, 1, tokens.length));
             }
@@ -287,6 +325,32 @@ public class ConfigFileParser {
     }
 
     /**
+     * Takes the list of the tokens following "output-port" in a line of the
+     * config file and extracts the output port number, or prints an error
+     * message if the contents of the line are not valid.
+     * @param tokens  The tokens from the line in the config file.
+     */
+    private void parseOutputPort(String[] tokens) {
+        if (tokens.length != 1) {
+            outputPortError();
+        }
+
+        try {
+            int outputPort = Integer.parseInt(tokens[0]);
+            if (isValidPortNo(outputPort)) {
+                this.outputPort = outputPort;
+            } else {
+                outputPortError();
+            }
+
+        } catch (NumberFormatException e) {
+            outputPortError();
+        }
+
+        this.outputPortSet = true;
+    }
+
+    /**
      * Takes the list of the tokens following "update-period" in a line of the
      * config file and extracts the update period.
      * Prints an error message if the contents of the line are not valid.
@@ -353,6 +417,18 @@ public class ConfigFileParser {
         Error.error("Invalid config file: outputs must be a non-empty " +
                 "space-separated list of entries in the form " +
                 "inputPort-metric-routerId, where each value is an integer.");
+    }
+
+    /**
+     * Prints an error message explaining the usage of the output-port parameter
+     * and terminates the program.
+     */
+    private void outputPortError() {
+        Error.error(String.format(
+                "Invalid config file: output-port must be " +
+                        "a single integer between %d and %d.",
+                RIPDaemon.MIN_PORT_NO,
+                RIPDaemon.MAX_PORT_NO));
     }
 
     /**

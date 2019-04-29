@@ -85,7 +85,7 @@ public class RIPDaemon {
      * The time to wait between sending periodic updates (in seconds).
      * Can be specified in the config file, otherwise the default value is used.
      */
-    private int updatePeriod = 5;
+    private int updatePeriod = 30;
 
     /**
      * The next time that periodic update messages should be sent to neighbours.
@@ -113,18 +113,19 @@ public class RIPDaemon {
      */
     private LocalTime nextTriggeredUpdateTime;
 
-
     /**
      * Creates a new RIP daemon using the values specified in the config file.
      * @param routerId      The router ID of the router.
      * @param inputPorts    A list of the router's input port numbers.
      * @param outputs       A list of the router's neighbours, in the form
      *                          [inputPort, metric, routerId].
+     * @param outputPort    The port number to use for the output socket.
      * @param updatePeriod  The update period specified in the config file, or
      *                          0 if no period was specified.
      */
     private RIPDaemon(int routerId, ArrayList<Integer> inputPorts,
-                      ArrayList<int[]> outputs, int updatePeriod) {
+                      ArrayList<int[]> outputs, int outputPort,
+                      int updatePeriod) {
         // Set the update timer period to the value in the config file if it
         // was specified.
         if (updatePeriod != 0) {
@@ -140,9 +141,7 @@ public class RIPDaemon {
 
         this.input = new Input(inputPorts, this.table);
 
-        // Arbitrarily choose an output port number.
-        int outputPortNo = inputPorts.get(0) + 1;
-        this.output = new Output(routerId, outputPortNo, outputs, this.table);
+        this.output = new Output(routerId, outputPort, outputs, this.table);
 
         // Send initial response messages.
         this.output.sendUpdates();
@@ -188,14 +187,14 @@ public class RIPDaemon {
                 LocalTime.now().isAfter(this.nextTriggeredUpdateTime)) {
 
             if (LocalTime.now().isAfter(nextPeriodicUpdateTime)) {
-                // Periodic update suppresses any triggered updates.
+                // Send periodic update (suppresses any triggered updates).
                 this.output.sendUpdates();
                 setNextPeriodicUpdateTime();
                 this.updateTriggered = false;
                 this.triggeredUpdateTimerRunning = false;
 
             } else if (this.updateTriggered) {
-                System.err.println("Triggered update sent.");
+                // Send triggered update
                 this.output.sendUpdates();
                 this.updateTriggered = false;
                 this.triggeredUpdateTimerRunning = true;
@@ -232,6 +231,7 @@ public class RIPDaemon {
         RIPDaemon daemon = new RIPDaemon(parser.getRouterId(),
                                          parser.getInputPorts(),
                                          parser.getOutputs(),
+                                         parser.getOutputPort(),
                                          parser.getUpdatePeriod());
 
         daemon.run();
