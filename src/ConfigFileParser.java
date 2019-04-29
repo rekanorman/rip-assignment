@@ -156,7 +156,7 @@ public class ConfigFileParser {
      * Processes the given line of the config file, setting the appropriate
      * values if the line is valid, of printing an error message if it is
      * invalid. Ignores empty lines and comments.
-     * @param line  The line of the config to process.
+     * @param line  The line of the config file to process.
      */
     private void parseLine(String line) {
         // Ignore empty lines and comments.

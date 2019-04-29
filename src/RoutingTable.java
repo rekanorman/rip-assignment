@@ -95,14 +95,10 @@ public class RoutingTable {
         for (RoutingTableEntry entry : this.table.values()) {
             if (entry.timeoutExpired()) {
                 startDeletion(entry.destId);
-                System.out.println(String.format("Entry for router %d timeout.",
-                        entry.destId));
             }
 
             if (entry.garbageCollectionExpired()) {
                 toDelete.add(entry.destId);
-                System.out.println(String.format("Entry for router %d deleted.",
-                        entry.destId));
             }
         }
 
@@ -245,7 +241,6 @@ public class RoutingTable {
          * been started.
          */
         private boolean garbageCollectionStarted = false;
-
 
         private RoutingTableEntry(int destId, int metric, int nextHop) {
             this.destId = destId;
