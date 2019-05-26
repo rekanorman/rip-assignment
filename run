@@ -1,7 +1,0 @@
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/1.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/2.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/3.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/4.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/5.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/6.conf
-gnome-terminal --tab -- java -cp out/production/rip-assignment RIPDaemon conf/7.conf
